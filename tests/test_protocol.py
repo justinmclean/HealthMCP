@@ -1,0 +1,180 @@
+from __future__ import annotations
+
+import json
+import sys
+import unittest
+from pathlib import Path
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from apache_health_mcp import protocol, tools
+from tests.fixtures import make_reports_dir
+
+
+class ProtocolTests(unittest.TestCase):
+    def make_reports_dir(self):
+        return make_reports_dir()
+
+    def test_jsonrpc_result_helper(self) -> None:
+        response = protocol.jsonrpc_result(7, {"ok": True})
+
+        self.assertEqual(response, {"jsonrpc": "2.0", "id": 7, "result": {"ok": True}})
+
+    def test_jsonrpc_error_helper(self) -> None:
+        response = protocol.jsonrpc_error(8, -1, "bad")
+
+        self.assertEqual(
+            response,
+            {"jsonrpc": "2.0", "id": 8, "error": {"code": -1, "message": "bad"}},
+        )
+
+    def test_tool_response_helper(self) -> None:
+        response = protocol.tool_response("hello", is_error=True)
+
+        self.assertTrue(response["isError"])
+        self.assertEqual(response["content"][0]["text"], "hello")
+
+    def test_list_tools_payload_contains_expected_tools(self) -> None:
+        tool_names = [tool["name"] for tool in protocol.list_tools_payload()]
+
+        self.assertEqual(
+            tool_names,
+            [
+                "health_overview",
+                "list_podlings",
+                "search_podlings",
+                "get_report_summary",
+                "get_report_markdown",
+                "get_window_metrics",
+                "compare_windows",
+                "query_metric_rankings",
+                "list_metrics",
+            ],
+        )
+
+    def test_handle_message_initialize(self) -> None:
+        response = protocol.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": "2024-11-05"},
+            }
+        )
+
+        self.assertEqual(response["result"]["serverInfo"]["name"], "apache-health-mcp")
+
+    def test_handle_message_initialize_uses_default_protocol_version(self) -> None:
+        response = protocol.handle_message(
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+        )
+
+        self.assertEqual(response["result"]["protocolVersion"], "2024-11-05")
+
+    def test_handle_message_tools_list(self) -> None:
+        response = protocol.handle_message(
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+        )
+
+        self.assertEqual(len(response["result"]["tools"]), 9)
+
+    def test_call_tool_success(self) -> None:
+        with self.make_reports_dir() as reports_dir:
+            result = protocol.call_tool("health_overview", {"reports_dir": reports_dir})
+
+        self.assertFalse(result["isError"])
+        payload = json.loads(result["content"][0]["text"])
+        self.assertEqual(payload["report_count"], 2)
+
+    def test_call_tool_error_payload(self) -> None:
+        result = protocol.call_tool("get_report_summary", {"podling": "Missing"})
+
+        self.assertTrue(result["isError"])
+        payload = json.loads(result["content"][0]["text"])
+        self.assertFalse(payload["ok"])
+
+    def test_call_tool_unknown_tool_raises_value_error(self) -> None:
+        with self.assertRaises(ValueError):
+            protocol.call_tool("missing_tool", {})
+
+    def test_handle_message_invalid_tool_arguments(self) -> None:
+        response = protocol.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "health_overview", "arguments": []},
+            }
+        )
+
+        self.assertEqual(response["error"]["code"], -32602)
+
+    def test_handle_message_unknown_method(self) -> None:
+        response = protocol.handle_message(
+            {"jsonrpc": "2.0", "id": 1, "method": "unknown/method", "params": {}}
+        )
+
+        self.assertEqual(response["error"]["code"], -32601)
+
+    def test_handle_notification_returns_no_response(self) -> None:
+        response = protocol.handle_message(
+            {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}
+        )
+
+        self.assertEqual(response, {})
+
+    def test_main_processes_parse_error_and_valid_message(self) -> None:
+        stdin = mock.Mock()
+        stdin.__iter__ = mock.Mock(
+            return_value=iter(
+                [
+                    "\n",
+                    '{"broken"\n',
+                    '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}\n',
+                ]
+            )
+        )
+        stdout = mock.Mock()
+        writes: list[str] = []
+        stdout.write.side_effect = writes.append
+
+        with mock.patch.object(protocol.sys, "stdin", stdin):
+            with mock.patch.object(protocol.sys, "stdout", stdout):
+                exit_code = protocol.main([])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(writes), 2)
+        first = json.loads(writes[0])
+        second = json.loads(writes[1])
+        self.assertEqual(first["error"]["code"], -32700)
+        self.assertIn("tools", second["result"])
+
+    def test_main_uses_default_reports_dir_when_missing(self) -> None:
+        stdin = mock.Mock()
+        stdin.__iter__ = mock.Mock(return_value=iter([]))
+        stdout = mock.Mock()
+
+        tools._CONFIGURED_REPORTS_DIR = None
+        with mock.patch.object(protocol.sys, "stdin", stdin):
+            with mock.patch.object(protocol.sys, "stdout", stdout):
+                exit_code = protocol.main([])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(tools.resolve_reports_dir(None), "reports")
+
+    def test_main_accepts_reports_dir_argument(self) -> None:
+        stdin = mock.Mock()
+        stdin.__iter__ = mock.Mock(return_value=iter([]))
+        stdout = mock.Mock()
+
+        tools._CONFIGURED_REPORTS_DIR = None
+        with mock.patch.object(protocol.sys, "stdin", stdin):
+            with mock.patch.object(protocol.sys, "stdout", stdout):
+                exit_code = protocol.main(["--reports-dir", "/tmp/reports"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(tools.resolve_reports_dir(None), "/tmp/reports")

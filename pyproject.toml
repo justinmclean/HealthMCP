@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "apache-health-mcp"
+version = "0.1.0"
+description = "MCP server for querying Apache incubator health markdown reports."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "mcp>=1.0.0",
+]
+
+[project.scripts]
+apache-health-mcp = "apache_health_mcp.protocol:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.optional-dependencies]
+test = [
+  "coverage>=7.0.0",
+]
+dev = [
+  "coverage>=7.0.0",
+  "mypy>=1.0.0",
+  "ruff>=0.6.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "I",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/test_parser.py" = ["E402"]
+"tests/test_protocol.py" = ["E402"]
+"tests/test_tools.py" = ["E402"]
+"server.py" = ["E402"]
+
+[tool.coverage.run]
+source = ["apache_health_mcp"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+check_untyped_defs = true
+no_implicit_optional = true
+pretty = true
