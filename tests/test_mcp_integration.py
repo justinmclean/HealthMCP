@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 from tests.fixtures import ALPHA_REPORT
 
@@ -20,7 +21,11 @@ class McpProtocolTests(unittest.TestCase):
         (path / "Alpha.md").write_text(ALPHA_REPORT, encoding="utf-8")
         return temp_dir
 
-    def _run_session(self, messages: list[dict], reports_dir: str) -> list[dict]:
+    def _run_session(self, messages: list[Any], reports_dir: str) -> list[Any]:
+        lines = [json.dumps(message) for message in messages]
+        return self._run_raw_session(lines, reports_dir)
+
+    def _run_raw_session(self, lines: list[str], reports_dir: str) -> list[Any]:
         proc = subprocess.Popen(
             [sys.executable, str(SERVER_SCRIPT), "--reports-dir", reports_dir],
             cwd=str(ROOT),
@@ -35,8 +40,8 @@ class McpProtocolTests(unittest.TestCase):
             assert proc.stdout is not None
             assert proc.stderr is not None
 
-            for message in messages:
-                proc.stdin.write(json.dumps(message) + "\n")
+            for line in lines:
+                proc.stdin.write(line + "\n")
                 proc.stdin.flush()
                 responses.append(json.loads(proc.stdout.readline()))
 
@@ -253,3 +258,61 @@ class McpProtocolTests(unittest.TestCase):
 
         self.assertEqual(responses[0]["error"]["code"], -32601)
         self.assertIn("Method 'unknown/method' not found", responses[0]["error"]["message"])
+
+    def test_batch_request_returns_batch_response(self) -> None:
+        with self.make_reports_dir() as reports_dir:
+            responses = self._run_session(
+                [
+                    [
+                        {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+                        {
+                            "jsonrpc": "2.0",
+                            "method": "notifications/initialized",
+                            "params": {},
+                        },
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 2,
+                            "method": "tools/call",
+                            "params": {
+                                "name": "get_report_summary",
+                                "arguments": {"podling": "Alpha"},
+                            },
+                        },
+                        {"jsonrpc": "2.0", "id": 3, "method": "missing/method", "params": {}},
+                    ]
+                ],
+                reports_dir,
+            )
+
+        batch = responses[0]
+        self.assertIsInstance(batch, list)
+        self.assertEqual([item["id"] for item in batch], [1, 2, 3])
+        self.assertIn("tools", batch[0]["result"])
+        self.assertEqual(batch[1]["result"]["structuredContent"]["podling"], "Alpha")
+        self.assertEqual(batch[2]["error"]["code"], -32601)
+
+    def test_malformed_json_returns_structured_parse_error(self) -> None:
+        with self.make_reports_dir() as reports_dir:
+            responses = self._run_raw_session(['{"broken"'], reports_dir)
+
+        self.assertEqual(responses[0]["jsonrpc"], "2.0")
+        self.assertEqual(responses[0]["id"], None)
+        self.assertEqual(responses[0]["error"]["code"], -32700)
+        self.assertEqual(responses[0]["error"]["data"]["type"], "parse_error")
+
+    def test_malformed_request_shape_returns_structured_error(self) -> None:
+        with self.make_reports_dir() as reports_dir:
+            responses = self._run_session(
+                [
+                    ["not a request object"],
+                    {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": []},
+                ],
+                reports_dir,
+            )
+
+        self.assertEqual(responses[0][0]["id"], None)
+        self.assertEqual(responses[0][0]["error"]["code"], -32600)
+        self.assertEqual(responses[0][0]["error"]["data"]["type"], "invalid_request")
+        self.assertEqual(responses[1]["error"]["code"], -32602)
+        self.assertEqual(responses[1]["error"]["data"]["field"], "params")

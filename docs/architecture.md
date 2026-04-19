@@ -64,6 +64,8 @@ This module implements the stdio MCP/JSON-RPC behavior. It supports:
 - `tools/list`
 - `tools/call`
 
+Requests can be sent as single JSON-RPC objects or as JSON-RPC batches. Batch responses omit notification-only messages and preserve per-request success or error payloads for the remaining messages. The protocol layer validates the JSON-RPC envelope before dispatching, returning structured `error.data` details for parse errors, invalid requests, invalid params, and unknown methods.
+
 The implementation delegates actual report operations to `tools.py` and wraps structured tool results with both MCP `structuredContent` and a JSON text fallback in `content`.
 
 ### `server.py`

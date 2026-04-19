@@ -113,6 +113,59 @@ class ProtocolTests(unittest.TestCase):
 
         self.assertEqual(response["error"]["code"], -32602)
 
+    def test_handle_message_rejects_non_object_request(self) -> None:
+        response = protocol.handle_message(["not", "an", "object"])
+
+        self.assertEqual(response["id"], None)
+        self.assertEqual(response["error"]["code"], -32600)
+        self.assertEqual(response["error"]["data"]["type"], "invalid_request")
+
+    def test_handle_message_rejects_missing_jsonrpc_version(self) -> None:
+        response = protocol.handle_message({"id": 1, "method": "tools/list", "params": {}})
+
+        self.assertEqual(response["id"], 1)
+        self.assertEqual(response["error"]["code"], -32600)
+        self.assertEqual(response["error"]["data"]["field"], "jsonrpc")
+
+    def test_handle_message_rejects_invalid_id_type(self) -> None:
+        response = protocol.handle_message(
+            {"jsonrpc": "2.0", "id": True, "method": "tools/list", "params": {}}
+        )
+
+        self.assertEqual(response["id"], None)
+        self.assertEqual(response["error"]["code"], -32600)
+        self.assertEqual(response["error"]["data"]["field"], "id")
+
+    def test_handle_message_rejects_missing_method(self) -> None:
+        response = protocol.handle_message({"jsonrpc": "2.0", "id": 1, "params": {}})
+
+        self.assertEqual(response["error"]["code"], -32600)
+        self.assertEqual(response["error"]["data"]["field"], "method")
+
+    def test_handle_message_rejects_non_object_params(self) -> None:
+        response = protocol.handle_message(
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": []}
+        )
+
+        self.assertEqual(response["error"]["code"], -32602)
+        self.assertEqual(response["error"]["data"]["field"], "params")
+
+    def test_handle_message_rejects_unknown_tool_argument(self) -> None:
+        response = protocol.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "list_metrics",
+                    "arguments": {"unexpected": "value"},
+                },
+            }
+        )
+
+        self.assertEqual(response["error"]["code"], -32602)
+        self.assertIn("Unknown tool argument", response["error"]["message"])
+
     def test_handle_message_unknown_method(self) -> None:
         response = protocol.handle_message(
             {"jsonrpc": "2.0", "id": 1, "method": "unknown/method", "params": {}}
@@ -126,6 +179,31 @@ class ProtocolTests(unittest.TestCase):
         )
 
         self.assertEqual(response, {})
+
+    def test_handle_payload_processes_batch_requests(self) -> None:
+        response = protocol.handle_payload(
+            [
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+                {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+                {"jsonrpc": "2.0", "id": 2, "method": "unknown/method", "params": {}},
+                "bad request",
+            ]
+        )
+
+        self.assertIsInstance(response, list)
+        assert isinstance(response, list)
+        self.assertEqual([item["id"] for item in response], [1, 2, None])
+        self.assertIn("tools", response[0]["result"])
+        self.assertEqual(response[1]["error"]["code"], -32601)
+        self.assertEqual(response[2]["error"]["code"], -32600)
+
+    def test_handle_payload_rejects_empty_batch(self) -> None:
+        response = protocol.handle_payload([])
+
+        self.assertIsInstance(response, dict)
+        assert isinstance(response, dict)
+        self.assertEqual(response["id"], None)
+        self.assertEqual(response["error"]["code"], -32600)
 
     def test_main_processes_parse_error_and_valid_message(self) -> None:
         stdin = mock.Mock()
@@ -151,7 +229,43 @@ class ProtocolTests(unittest.TestCase):
         first = json.loads(writes[0])
         second = json.loads(writes[1])
         self.assertEqual(first["error"]["code"], -32700)
+        self.assertEqual(first["id"], None)
         self.assertIn("tools", second["result"])
+
+    def test_main_processes_batch_message(self) -> None:
+        stdin = mock.Mock()
+        stdin.__iter__ = mock.Mock(
+            return_value=iter(
+                [
+                    json.dumps(
+                        [
+                            {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
+                            {
+                                "jsonrpc": "2.0",
+                                "method": "notifications/initialized",
+                                "params": {},
+                            },
+                            {"jsonrpc": "2.0", "id": 2, "method": "unknown/method", "params": {}},
+                        ]
+                    )
+                    + "\n",
+                ]
+            )
+        )
+        stdout = mock.Mock()
+        writes: list[str] = []
+        stdout.write.side_effect = writes.append
+
+        with mock.patch.object(protocol.sys, "stdin", stdin):
+            with mock.patch.object(protocol.sys, "stdout", stdout):
+                exit_code = protocol.main([])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(writes), 1)
+        batch_response = json.loads(writes[0])
+        self.assertEqual([item["id"] for item in batch_response], [1, 2])
+        self.assertIn("tools", batch_response[0]["result"])
+        self.assertEqual(batch_response[1]["error"]["code"], -32601)
 
     def test_main_uses_default_reports_dir_when_missing(self) -> None:
         stdin = mock.Mock()

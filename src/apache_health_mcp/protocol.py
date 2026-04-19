@@ -8,17 +8,49 @@ from typing import Any
 from apache_health_mcp import tools
 
 TOOLS = tools.TOOLS
+JSONRPC_VERSION = "2.0"
+JsonRpcResponse = dict[str, Any]
+JsonRpcPayloadResponse = JsonRpcResponse | list[JsonRpcResponse]
 
 
-def jsonrpc_result(message_id: Any, result: Any) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": message_id, "result": result}
+def valid_message_id(value: Any) -> bool:
+    return value is None or (isinstance(value, (str, int, float)) and not isinstance(value, bool))
 
 
-def jsonrpc_error(message_id: Any, code: int, message: str) -> dict[str, Any]:
-    safe_id = (
-        message_id if isinstance(message_id, (str, int)) and not isinstance(message_id, bool) else 0
-    )
-    return {"jsonrpc": "2.0", "id": safe_id, "error": {"code": code, "message": message}}
+def request_id(message: Any) -> Any:
+    if isinstance(message, dict) and valid_message_id(message.get("id")):
+        return message.get("id")
+    return None
+
+
+def jsonrpc_result(message_id: Any, result: Any) -> JsonRpcResponse:
+    return {"jsonrpc": JSONRPC_VERSION, "id": message_id, "result": result}
+
+
+def jsonrpc_error(
+    message_id: Any,
+    code: int,
+    message: str,
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    error: dict[str, Any] = {"code": code, "message": message}
+    if data is not None:
+        error["data"] = data
+    return {"jsonrpc": JSONRPC_VERSION, "id": request_id({"id": message_id}), "error": error}
+
+
+def invalid_request(message_id: Any, message: str, field: str | None = None) -> JsonRpcResponse:
+    data: dict[str, Any] = {"type": "invalid_request"}
+    if field is not None:
+        data["field"] = field
+    return jsonrpc_error(message_id, -32600, message, data)
+
+
+def invalid_params(message_id: Any, message: str, field: str | None = None) -> JsonRpcResponse:
+    data: dict[str, Any] = {"type": "invalid_params"}
+    if field is not None:
+        data["field"] = field
+    return jsonrpc_error(message_id, -32602, message, data)
 
 
 def _json_text(payload: Any) -> str:
@@ -49,9 +81,29 @@ def list_tools_payload() -> list[dict[str, Any]]:
     ]
 
 
+def validate_tool_arguments(name: str, arguments: dict[str, Any]) -> str | None:
+    schema = TOOLS[name]["inputSchema"]
+    properties = schema.get("properties", {})
+    required = schema.get("required", [])
+
+    for key in required:
+        if key not in arguments:
+            return f"Missing required tool argument: {key}"
+
+    if not schema.get("additionalProperties", True):
+        unknown = sorted(set(arguments) - set(properties))
+        if unknown:
+            return "Unknown tool argument(s): " + ", ".join(unknown)
+
+    return None
+
+
 def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     if name not in TOOLS:
         raise ValueError(f"Unknown tool: {name}")
+    validation_error = validate_tool_arguments(name, arguments)
+    if validation_error is not None:
+        raise ValueError(validation_error)
     try:
         return tool_response(TOOLS[name]["handler"](**arguments))
     except Exception as exc:
@@ -59,12 +111,32 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return tool_response(payload, is_error=True)
 
 
-def handle_message(message: dict[str, Any]) -> dict[str, Any]:
-    message_id = message.get("id")
-    method = message.get("method")
-    params = message.get("params") or {}
+def handle_message(message: Any) -> JsonRpcResponse:
+    if not isinstance(message, dict):
+        return invalid_request(None, "JSON-RPC request must be an object")
 
-    if message_id is None and isinstance(method, str) and method.startswith("notifications/"):
+    message_id = request_id(message)
+    if "id" in message and not valid_message_id(message["id"]):
+        return invalid_request(None, "Request id must be a string, number, or null", "id")
+
+    if message.get("jsonrpc") != JSONRPC_VERSION:
+        return invalid_request(
+            message_id,
+            "JSON-RPC version must be '2.0'",
+            "jsonrpc",
+        )
+
+    method = message.get("method")
+    if not isinstance(method, str) or not method:
+        return invalid_request(message_id, "Request method must be a non-empty string", "method")
+
+    params = message.get("params", {})
+    if params is None:
+        params = {}
+    if not isinstance(params, dict):
+        return invalid_params(message_id, "Request params must be an object", "params")
+
+    if "id" not in message and method.startswith("notifications/"):
         return {}
 
     if method == "initialize":
@@ -84,15 +156,29 @@ def handle_message(message: dict[str, Any]) -> dict[str, Any]:
         name = params.get("name")
         arguments = params.get("arguments", {})
         if not isinstance(name, str):
-            return jsonrpc_error(message_id, -32602, "Tool name must be a string")
+            return invalid_params(message_id, "Tool name must be a string", "name")
         if not isinstance(arguments, dict):
-            return jsonrpc_error(message_id, -32602, "Tool arguments must be an object")
+            return invalid_params(message_id, "Tool arguments must be an object", "arguments")
         try:
             return jsonrpc_result(message_id, call_tool(name, arguments))
         except ValueError as exc:
-            return jsonrpc_error(message_id, -32602, str(exc))
+            return invalid_params(message_id, str(exc), "arguments")
 
-    return jsonrpc_error(message_id, -32601, f"Method '{method}' not found")
+    return jsonrpc_error(
+        message_id,
+        -32601,
+        f"Method '{method}' not found",
+        {"type": "method_not_found", "method": method},
+    )
+
+
+def handle_payload(payload: Any) -> JsonRpcPayloadResponse:
+    if isinstance(payload, list):
+        if not payload:
+            return invalid_request(None, "JSON-RPC batch must contain at least one request")
+        responses = [response for item in payload if (response := handle_message(item))]
+        return responses
+    return handle_message(payload)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -109,12 +195,18 @@ def main(argv: list[str] | None = None) -> int:
         raw = line.strip()
         if not raw:
             continue
+        response: JsonRpcPayloadResponse
         try:
-            message = json.loads(raw)
+            payload = json.loads(raw)
         except json.JSONDecodeError:
-            response = jsonrpc_error(0, -32700, "Parse error")
+            response = jsonrpc_error(
+                None,
+                -32700,
+                "Parse error",
+                {"type": "parse_error"},
+            )
         else:
-            response = handle_message(message)
+            response = handle_payload(payload)
         if response:
             sys.stdout.write(json.dumps(response) + "\n")
             sys.stdout.flush()
