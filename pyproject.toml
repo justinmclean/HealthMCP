@@ -21,6 +21,9 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+apache_health_mcp = ["py.typed"]
+
 [project.optional-dependencies]
 test = [
   "coverage>=7.0.0",
