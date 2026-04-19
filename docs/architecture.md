@@ -11,7 +11,9 @@ The project follows the same broad shape as `PodlingsMCP`:
 - `src/apache_health_mcp/protocol.py`
   The JSON-RPC/MCP protocol loop over stdio.
 - `src/apache_health_mcp/tools.py`
-  Dependency-light tool handlers that wrap the parser/query logic.
+  Dependency-light tool handlers, argument validation, and the `TOOLS` registry.
+- `src/apache_health_mcp/schemas.py`
+  Shared MCP input schema fragments and schema-builder helpers.
 - `src/apache_health_mcp/parser.py`
   The report parsing and query layer.
 
@@ -34,15 +36,25 @@ This module provides the user-facing tool handlers:
 
 - `health_overview`
 - `list_podlings`
+- `search_podlings`
 - `get_report_summary`
 - `get_report_markdown`
+- `get_window_metrics`
+- `compare_windows`
 - `query_metric_rankings`
+- `list_metrics`
 
 It also resolves the reports directory from either:
 
 - the explicit `reports_dir` tool argument
 - the `--reports-dir` startup argument
 - the default `reports`
+
+Tool handlers return native structured payloads where possible. `get_report_markdown` returns raw text because the markdown report is the payload itself.
+
+### `src/apache_health_mcp/schemas.py`
+
+This module contains shared MCP input schema fragments and schema builder helpers. New tool schema definitions should be added here rather than inline in `protocol.py`.
 
 ### `src/apache_health_mcp/protocol.py`
 
@@ -52,7 +64,7 @@ This module implements the stdio MCP/JSON-RPC behavior. It supports:
 - `tools/list`
 - `tools/call`
 
-The implementation delegates actual report operations to `tools.py`.
+The implementation delegates actual report operations to `tools.py` and wraps structured tool results with both MCP `structuredContent` and a JSON text fallback in `content`.
 
 ### `server.py`
 

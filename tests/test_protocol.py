@@ -33,10 +33,11 @@ class ProtocolTests(unittest.TestCase):
         )
 
     def test_tool_response_helper(self) -> None:
-        response = protocol.tool_response("hello", is_error=True)
+        response = protocol.tool_response({"message": "hello"}, is_error=True)
 
         self.assertTrue(response["isError"])
-        self.assertEqual(response["content"][0]["text"], "hello")
+        self.assertEqual(response["structuredContent"], {"message": "hello"})
+        self.assertEqual(json.loads(response["content"][0]["text"]), {"message": "hello"})
 
     def test_list_tools_payload_contains_expected_tools(self) -> None:
         tool_names = [tool["name"] for tool in protocol.list_tools_payload()]
@@ -86,15 +87,14 @@ class ProtocolTests(unittest.TestCase):
         with self.make_reports_dir() as reports_dir:
             result = protocol.call_tool("health_overview", {"reports_dir": reports_dir})
 
-        self.assertFalse(result["isError"])
-        payload = json.loads(result["content"][0]["text"])
-        self.assertEqual(payload["report_count"], 2)
+        self.assertNotIn("isError", result)
+        self.assertEqual(result["structuredContent"]["report_count"], 2)
 
     def test_call_tool_error_payload(self) -> None:
         result = protocol.call_tool("get_report_summary", {"podling": "Missing"})
 
         self.assertTrue(result["isError"])
-        payload = json.loads(result["content"][0]["text"])
+        payload = result["structuredContent"]
         self.assertFalse(payload["ok"])
 
     def test_call_tool_unknown_tool_raises_value_error(self) -> None:

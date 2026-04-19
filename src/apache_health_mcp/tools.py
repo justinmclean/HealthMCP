@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
+from apache_health_mcp import schemas
 from apache_health_mcp.parser import (
     find_report,
     query_metric,
@@ -36,10 +36,6 @@ VALID_METRICS = {
     "dev_messages",
     "dev_unique_posters",
 }
-
-
-def to_json(data: Any) -> str:
-    return json.dumps(data, indent=2, sort_keys=True)
 
 
 def configure_reports_dir(value: str | None) -> None:
@@ -121,48 +117,42 @@ def require_sort_desc(value: Any) -> bool:
     return value
 
 
-def health_overview(reports_dir: str | None = None) -> str:
+def health_overview(reports_dir: str | None = None) -> dict[str, Any]:
     """Return a high-level summary of the available Apache health reports."""
-    return to_json(reports_overview(resolve_reports_dir(reports_dir)))
+    return reports_overview(resolve_reports_dir(reports_dir))
 
 
-def list_podlings(reports_dir: str | None = None) -> str:
+def list_podlings(reports_dir: str | None = None) -> dict[str, Any]:
     """List podlings that have a parsed markdown report."""
     overview = reports_overview(resolve_reports_dir(reports_dir))
-    return to_json(
-        {
-            "reports_dir": overview["reports_dir"],
-            "report_count": overview["report_count"],
-            "podlings": overview["podlings"],
-        }
-    )
+    return {
+        "reports_dir": overview["reports_dir"],
+        "report_count": overview["report_count"],
+        "podlings": overview["podlings"],
+    }
 
 
 def search_podlings(
     query: str,
     reports_dir: str | None = None,
     limit: int = 20,
-) -> str:
+) -> dict[str, Any]:
     """Search podling names by case-insensitive substring."""
     resolved_query = require_non_empty_string(query, "query").casefold()
     resolved_limit = require_limit(limit)
     overview = reports_overview(resolve_reports_dir(reports_dir))
     matches = [name for name in overview["podlings"] if resolved_query in name.casefold()]
-    return to_json(
-        {
-            "query": query,
-            "count": len(matches),
-            "results": matches[:resolved_limit],
-        }
-    )
+    return {
+        "query": query,
+        "count": len(matches),
+        "results": matches[:resolved_limit],
+    }
 
 
-def get_report_summary(podling: str, reports_dir: str | None = None) -> str:
+def get_report_summary(podling: str, reports_dir: str | None = None) -> dict[str, Any]:
     """Get parsed metrics for one podling report."""
     resolved_podling = require_non_empty_string(podling, "podling")
-    return to_json(
-        summarize_report(find_report(resolve_reports_dir(reports_dir), resolved_podling))
-    )
+    return summarize_report(find_report(resolve_reports_dir(reports_dir), resolved_podling))
 
 
 def get_report_markdown(podling: str, reports_dir: str | None = None) -> str:
@@ -176,21 +166,19 @@ def get_window_metrics(
     podling: str,
     window: str,
     reports_dir: str | None = None,
-) -> str:
+) -> dict[str, Any]:
     """Return metrics for a single podling/window combination."""
     resolved_podling = require_non_empty_string(podling, "podling")
     resolved_window = require_window(window)
     report = find_report(resolve_reports_dir(reports_dir), resolved_podling)
     for metrics in report.windows:
         if metrics.window == resolved_window:
-            return to_json(
-                {
-                    "podling": report.podling,
-                    "generated_on": report.generated_on,
-                    "window": resolved_window,
-                    "metrics": metrics.to_dict(),
-                }
-            )
+            return {
+                "podling": report.podling,
+                "generated_on": report.generated_on,
+                "window": resolved_window,
+                "metrics": metrics.to_dict(),
+            }
     raise ValueError(f"Window '{resolved_window}' not available for podling '{resolved_podling}'")
 
 
@@ -198,7 +186,7 @@ def compare_windows(
     podling: str,
     windows: list[str],
     reports_dir: str | None = None,
-) -> str:
+) -> dict[str, Any]:
     """Compare one podling across two or three windows."""
     resolved_podling = require_non_empty_string(podling, "podling")
     resolved_windows = require_windows(windows)
@@ -211,13 +199,11 @@ def compare_windows(
             f"Window(s) not available for podling '{resolved_podling}': {', '.join(missing)}"
         )
 
-    return to_json(
-        {
-            "podling": report.podling,
-            "generated_on": report.generated_on,
-            "windows": {window: by_window[window] for window in resolved_windows},
-        }
-    )
+    return {
+        "podling": report.podling,
+        "generated_on": report.generated_on,
+        "windows": {window: by_window[window] for window in resolved_windows},
+    }
 
 
 def query_metric_rankings(
@@ -228,7 +214,7 @@ def query_metric_rankings(
     sort_desc: bool = True,
     limit: int = 20,
     reports_dir: str | None = None,
-) -> str:
+) -> dict[str, Any]:
     """Rank podlings by one parsed metric for a specific window."""
     resolved_metric = require_metric(metric)
     resolved_window = require_window(window)
@@ -247,21 +233,72 @@ def query_metric_rankings(
         max_value=resolved_max,
         sort_desc=resolved_sort_desc,
     )
-    return to_json(
-        {
-            "metric": resolved_metric,
-            "window": resolved_window,
-            "count": len(rows),
-            "results": rows[:resolved_limit],
-        }
-    )
+    return {
+        "metric": resolved_metric,
+        "window": resolved_window,
+        "count": len(rows),
+        "results": rows[:resolved_limit],
+    }
 
 
-def list_metrics() -> str:
+def list_metrics() -> dict[str, Any]:
     """Return the supported metrics and windows for querying."""
-    return to_json(
-        {
-            "windows": sorted(VALID_WINDOWS),
-            "metrics": sorted(VALID_METRICS),
-        }
-    )
+    return {
+        "windows": sorted(VALID_WINDOWS),
+        "metrics": sorted(VALID_METRICS),
+    }
+
+
+TOOLS: dict[str, dict[str, Any]] = {
+    "health_overview": schemas.tool_definition(
+        description="Return a high-level summary of the available Apache health reports.",
+        handler=health_overview,
+        properties=schemas.base_properties(),
+    ),
+    "list_podlings": schemas.tool_definition(
+        description="List podlings that have a parsed markdown report.",
+        handler=list_podlings,
+        properties=schemas.base_properties(),
+    ),
+    "search_podlings": schemas.tool_definition(
+        description="Search podling names by case-insensitive substring.",
+        handler=search_podlings,
+        properties=schemas.search_properties(),
+        required=["query"],
+    ),
+    "get_report_summary": schemas.tool_definition(
+        description="Get parsed metrics for one podling report.",
+        handler=get_report_summary,
+        properties=schemas.podling_properties(),
+        required=["podling"],
+    ),
+    "get_report_markdown": schemas.tool_definition(
+        description="Return the raw markdown for one podling report.",
+        handler=get_report_markdown,
+        properties=schemas.podling_properties(),
+        required=["podling"],
+    ),
+    "get_window_metrics": schemas.tool_definition(
+        description="Return metrics for a single podling/window combination.",
+        handler=get_window_metrics,
+        properties=schemas.window_metrics_properties(sorted(VALID_WINDOWS)),
+        required=["podling", "window"],
+    ),
+    "compare_windows": schemas.tool_definition(
+        description="Compare one podling across two or three windows.",
+        handler=compare_windows,
+        properties=schemas.compare_windows_properties(sorted(VALID_WINDOWS)),
+        required=["podling", "windows"],
+    ),
+    "query_metric_rankings": schemas.tool_definition(
+        description="Rank podlings by one parsed metric for a specific window.",
+        handler=query_metric_rankings,
+        properties=schemas.ranking_properties(sorted(VALID_METRICS), sorted(VALID_WINDOWS)),
+        required=["metric"],
+    ),
+    "list_metrics": schemas.tool_definition(
+        description="Return the supported metrics and windows for querying.",
+        handler=list_metrics,
+        properties={},
+    ),
+}

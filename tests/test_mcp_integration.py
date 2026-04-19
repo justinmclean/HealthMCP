@@ -109,9 +109,10 @@ class McpProtocolTests(unittest.TestCase):
                 reports_dir,
             )
 
-        payload = json.loads(responses[1]["result"]["content"][0]["text"])
-        self.assertEqual(payload["podling"], "Alpha")
-        self.assertEqual(payload["latest_metrics"]["3m"]["commits"], 42)
+        self.assertEqual(responses[1]["result"]["structuredContent"]["podling"], "Alpha")
+        self.assertEqual(
+            responses[1]["result"]["structuredContent"]["latest_metrics"]["3m"]["commits"], 42
+        )
 
     def test_tools_call_search_success(self) -> None:
         with self.make_reports_dir() as reports_dir:
@@ -136,8 +137,7 @@ class McpProtocolTests(unittest.TestCase):
                 reports_dir,
             )
 
-        payload = json.loads(responses[1]["result"]["content"][0]["text"])
-        self.assertEqual(payload["results"], ["Alpha"])
+        self.assertEqual(responses[1]["result"]["structuredContent"]["results"], ["Alpha"])
 
     def test_tools_call_compare_windows_success(self) -> None:
         with self.make_reports_dir() as reports_dir:
@@ -162,7 +162,7 @@ class McpProtocolTests(unittest.TestCase):
                 reports_dir,
             )
 
-        payload = json.loads(responses[1]["result"]["content"][0]["text"])
+        payload = responses[1]["result"]["structuredContent"]
         self.assertEqual(payload["windows"]["3m"]["commits"], 42)
         self.assertEqual(payload["windows"]["6m"]["commits"], 70)
         self.assertEqual(payload["windows"]["3m"]["trends"]["commits"], "up")
@@ -238,7 +238,7 @@ class McpProtocolTests(unittest.TestCase):
             )
 
         self.assertTrue(responses[1]["result"]["isError"])
-        payload = json.loads(responses[1]["result"]["content"][0]["text"])
+        payload = responses[1]["result"]["structuredContent"]
         self.assertFalse(payload["ok"])
         self.assertIn("MissingPodling", payload["error"])
 

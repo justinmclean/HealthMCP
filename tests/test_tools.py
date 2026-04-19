@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sys
 import unittest
 from pathlib import Path
@@ -17,34 +16,34 @@ from tests.fixtures import make_reports_dir
 class ToolTests(unittest.TestCase):
     def test_tools_search_podlings_returns_matches(self) -> None:
         with make_reports_dir() as reports_dir:
-            data = json.loads(tools.search_podlings("alp", reports_dir))
+            data = tools.search_podlings("alp", reports_dir)
 
         self.assertEqual(data["count"], 1)
         self.assertEqual(data["results"], ["Alpha"])
 
     def test_tools_search_podlings_applies_limit(self) -> None:
         with make_reports_dir() as reports_dir:
-            data = json.loads(tools.search_podlings("a", reports_dir, limit=1))
+            data = tools.search_podlings("a", reports_dir, limit=1)
 
         self.assertEqual(len(data["results"]), 1)
 
     def test_tools_health_overview_returns_json(self) -> None:
         with make_reports_dir() as reports_dir:
-            data = json.loads(tools.health_overview(reports_dir))
+            data = tools.health_overview(reports_dir)
 
         self.assertEqual(data["report_count"], 2)
         self.assertEqual(data["podlings"], ["Alpha", "Bravo"])
 
     def test_tools_list_podlings_returns_json(self) -> None:
         with make_reports_dir() as reports_dir:
-            data = json.loads(tools.list_podlings(reports_dir))
+            data = tools.list_podlings(reports_dir)
 
         self.assertEqual(data["report_count"], 2)
         self.assertEqual(data["podlings"], ["Alpha", "Bravo"])
 
     def test_tools_get_report_summary_returns_json(self) -> None:
         with make_reports_dir() as reports_dir:
-            data = json.loads(tools.get_report_summary("Alpha", reports_dir))
+            data = tools.get_report_summary("Alpha", reports_dir)
 
         self.assertEqual(data["podling"], "Alpha")
         self.assertEqual(data["latest_metrics"]["3m"]["dev_messages"], 25)
@@ -58,7 +57,7 @@ class ToolTests(unittest.TestCase):
 
     def test_tools_get_window_metrics_returns_single_window(self) -> None:
         with make_reports_dir() as reports_dir:
-            data = json.loads(tools.get_window_metrics("Bravo", "to-date", reports_dir))
+            data = tools.get_window_metrics("Bravo", "to-date", reports_dir)
 
         self.assertEqual(data["podling"], "Bravo")
         self.assertEqual(data["window"], "to-date")
@@ -73,7 +72,7 @@ class ToolTests(unittest.TestCase):
 
     def test_tools_compare_windows_returns_requested_windows(self) -> None:
         with make_reports_dir() as reports_dir:
-            data = json.loads(tools.compare_windows("Alpha", ["3m", "6m"], reports_dir))
+            data = tools.compare_windows("Alpha", ["3m", "6m"], reports_dir)
 
         self.assertEqual(data["podling"], "Alpha")
         self.assertEqual(set(data["windows"].keys()), {"3m", "6m"})
@@ -97,13 +96,11 @@ class ToolTests(unittest.TestCase):
 
     def test_tools_query_metric_rankings_applies_limit(self) -> None:
         with make_reports_dir() as reports_dir:
-            data = json.loads(
-                tools.query_metric_rankings(
-                    metric="commits",
-                    window="3m",
-                    limit=1,
-                    reports_dir=reports_dir,
-                )
+            data = tools.query_metric_rankings(
+                metric="commits",
+                window="3m",
+                limit=1,
+                reports_dir=reports_dir,
             )
 
         self.assertEqual(data["count"], 2)
@@ -111,7 +108,7 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(data["results"][0]["podling"], "Alpha")
 
     def test_tools_list_metrics_returns_supported_values(self) -> None:
-        data = json.loads(tools.list_metrics())
+        data = tools.list_metrics()
 
         self.assertIn("commits", data["metrics"])
         self.assertIn("3m", data["windows"])
@@ -119,7 +116,7 @@ class ToolTests(unittest.TestCase):
     def test_tools_uses_configured_reports_dir(self) -> None:
         with make_reports_dir() as reports_dir:
             tools.configure_reports_dir(reports_dir)
-            data = json.loads(tools.health_overview())
+            data = tools.health_overview()
 
         self.assertEqual(data["report_count"], 2)
         self.assertEqual(data["reports_dir"], str(Path(reports_dir).resolve()))
