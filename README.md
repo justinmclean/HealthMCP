@@ -105,6 +105,48 @@ Ranks podlings by a parsed metric such as `commits`, `prs_merged`, `dev_messages
 `list_metrics`
 Returns the supported metric names and available windows for querying.
 
+## Usage Examples
+
+These examples show the kinds of questions a user can ask an MCP client connected to this server.
+
+### Reviewing A Report Snapshot
+
+- "What Apache Incubator health reports are available in this checkout?"
+- "How many podling health reports do we have, and when were they generated?"
+- "Which podlings have health reports I can query?"
+- "What health metrics and report windows can I ask about?"
+
+### Investigating One Podling
+
+- "Show me the health summary for Amoro."
+- "What does the latest health report say about Iggy?"
+- "Find podlings with names containing 'stream' and summarize the best match."
+- "For this podling, show the recent 3-month health metrics."
+- "Show me the original Markdown report for Amoro so I can check the source."
+
+### Comparing Trends Across Windows
+
+- "Compare Amoro's 3-month, 6-month, and 12-month activity."
+- "Is Iggy's development activity improving or slowing down?"
+- "Compare recent mailing-list activity with the longer-term trend for this podling."
+- "Has this podling's PR merge activity changed between the 3-month and 12-month windows?"
+- "Is the bus factor for this podling getting better or worse across the report windows?"
+
+### Finding Podlings By Activity Signal
+
+- "Which podlings had the most dev-list messages in the last 3 months?"
+- "Show me podlings with no commits in the last 3 months."
+- "Which podlings have the longest median PR merge time?"
+- "Rank podlings by merged PRs over the 6-month window."
+- "Find podlings with low reviewer diversity in the recent report window."
+
+### Preparing A Human Review Queue
+
+- "Give me a short list of podlings that may need mentor attention based on recent activity."
+- "Which podlings look quiet across commits, PRs, and dev-list messages?"
+- "Find podlings with low recent activity and compare them against their 12-month trend."
+- "Which podlings should I manually review for bus-factor or reviewer-diversity concerns?"
+
 ## Development
 
 Common tasks are available through `make`:
