@@ -8,11 +8,22 @@ version = "0.1.0"
 description = "MCP server for querying Apache incubator health markdown reports."
 readme = "README.md"
 requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+keywords = ["apache", "incubator", "health", "mcp"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development",
+]
 dependencies = [
   "mcp>=1.0.0",
 ]
 
 [project.scripts]
+health-mcp = "apache_health_mcp.protocol:main"
 apache-health-mcp = "apache_health_mcp.protocol:main"
 
 [tool.setuptools]

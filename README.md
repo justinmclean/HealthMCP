@@ -29,9 +29,9 @@ The parser is designed around the current Apache report structure, especially th
 ## Install
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+python3 -m pip install .
 ```
 
 For local development:
@@ -43,14 +43,18 @@ make install-dev
 ## Run
 
 ```bash
-apache-health-mcp --reports-dir /path/to/incubator/tools/health/reports
+health-mcp --reports-dir /path/to/incubator/tools/health/reports
 ```
 
-Or launch the stdio server directly, the same way `PodlingsMCP` is structured:
+The server uses `stdio`, so it is intended to be launched by an MCP client.
+
+For local development without installing first, you can still launch the stdio server directly:
 
 ```bash
 python3 server.py
 ```
+
+The package also keeps `apache-health-mcp` as a backwards-compatible command alias.
 
 ## Claude Desktop
 
@@ -60,9 +64,8 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` and add:
 {
   "mcpServers": {
     "apache-health": {
-      "command": "python3",
+      "command": "health-mcp",
       "args": [
-        "/Users/yourname/HealthMCP/server.py",
         "--reports-dir",
         "/path/to/incubator/tools/health/reports"
       ]
@@ -71,7 +74,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` and add:
 }
 ```
 
-Then restart Claude Desktop. Use absolute paths, and if needed point `command` at your venv Python instead of plain `python3`.
+Then restart Claude Desktop. If you installed into a virtual environment that is not on your `PATH`, use the absolute path to that environment's `health-mcp` command.
 
 ## MCP tools
 
